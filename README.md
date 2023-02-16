@@ -50,3 +50,9 @@ With the configuration and input file in place run the same command again:
 ```
 
 This should create users into the destination domain with their corresponding groups copied over.
+
+If you need to run the script to just validate the input TSV, run it in dry run mode like so:
+
+```bash
+./usermig.py -c config.yml --dryrun
+```
