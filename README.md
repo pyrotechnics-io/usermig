@@ -16,6 +16,14 @@ Run this inside your checkout directory
   .venv/bin/activate
   pip install -r requirements.txt
 ```
+
+Confirm if the script runs ok with this:
+
+```bash
+chmod +x usermig.py
+./usermig.py -h
+```
+
 ## Usage
 
 This script requires a configuration file to run. In the absense of one, it will create one for you
