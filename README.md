@@ -42,6 +42,7 @@ Email
 User type
 Groups
 ```
+> Exporting from the NR One frontend should give you these fields.
 
 With the configuration and input file in place run the same command again:
 
