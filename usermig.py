@@ -92,7 +92,7 @@ class LogFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)-10s | %(lineno)-4d | %(message)s"
+    format = "%(asctime)-17s | %(levelname)-7s | %(module)s.%(funcName)-12s | %(lineno)-4d | %(message)s"
     datefmt="%d%m%Y:%H:%M:%S"
 
     FORMATS = {
