@@ -188,7 +188,8 @@ class AssignRole(GraphQL):
         self.role_id = role_id
 
     def build_query(self):
-        return Template("""
+        if self.account_id:
+            return Template("""
 mutation {
   authorizationManagementGrantAccess(
     grantAccessOptions: {
@@ -205,6 +206,25 @@ mutation {
     }
   }
 }    
+        """).substitute(self.__dict__)
+        else:
+            logger.info("Assigning organization scoped role to {}".format(self.group_id))
+            return Template("""
+mutation {
+  authorizationManagementGrantAccess(
+    grantAccessOptions: {
+      organizationAccessGrants: { roleId: "$role_id" }
+      groupId: "$group_id"
+    }
+  ) {
+    roles {
+      roleId
+      type
+      organizationId
+    }
+  }
+}
+
         """).substitute(self.__dict__)
 
     def name(self):

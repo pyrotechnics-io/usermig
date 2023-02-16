@@ -253,13 +253,10 @@ def main(options):
             group_id = created_groups[group['displayName']]
             for role in group['roles']['roles']:
                 role_id = role['roleId']
-                if role['accountId']:
-                    account_id = role['accountId']
-                    logger.debug("Assigning {} ({}) Role {} AccountId {}".format(group['displayName'], group_id, role_id, account_id))
-                    nerdgraph.AssignRole(group_id, account_id,
-                                        role_id).execute(api_key, not options.dryrun)
-                else:
-                    logger.warning("Detected a null accountId on role {}".format(role_id))
+                account_id = role['accountId']
+                logger.debug("Assigning {} ({}) Role {} AccountId {}".format(group['displayName'], group_id, role_id, account_id))
+                nerdgraph.AssignRole(group_id, account_id,
+                                    role_id).execute(api_key, not options.dryrun)
 
     logger.info("Done!")
 
