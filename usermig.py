@@ -92,7 +92,7 @@ class LogFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)s.%(lineno)-10d | %(message)s"
+    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)-10s | %(lineno)-4d | %(message)s"
     datefmt="%d%m%Y:%H:%M:%S"
 
     FORMATS = {
@@ -123,11 +123,11 @@ def parse_args(args=sys.argv[1:]):
                    action="store_true",
                    default=False,
                    help="don't log")
-    g.add_argument("--finalize",
-                   "-f",
+    g.add_argument("--dryrun",
+                   "-r",
                    action="store_true",
-                   default=True,
-                   help="Finalize changes")
+                   default=False,
+                   help="just parse and validates the tsv file")
     g = parser.add_argument_group("usermig settings")
     g.add_argument(
         "-c",
@@ -197,16 +197,20 @@ def main(options):
     logger.info("Starting {} ...".format(config["name"]))
     api_key = config["api_key"]
 
-    if options.finalize is True:
+    if options.dryrun is False:
         logger.warning("This run will commit changes")
         countdown = 10
         for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
             time.sleep(1) # sleep for 1 second
 
     tsvname = config["tsv"]
-    logger.info("Parsing data from {tsvname}...")
+    logger.info("Parsing data from {}...".format(tsvname))
 
     users = parse_file(tsvname)
+
+    if options.dryrun:
+        logger.info("Running in dryrun mode. Exiting after validating input")
+        sys.exit(0)
 
     destination_domain_id = config["destination_domain_id"]
     source_domain_id = config["source_domain_id"]
@@ -223,7 +227,7 @@ def main(options):
     for user in users:
         logger.debug("Adding user {}".format(user["Email"]))
         userinfo = (nerdgraph.CreateUser(user["Email"], user["Name"], user["User type"].upper(),
-                            destination_domain_id)).execute(api_key, options.finalize)
+                            destination_domain_id)).execute(api_key, not options.dryrun)
         user_id = userinfo['data']['userManagementCreateUser']['createdUser']['id']
         groups = user["Groups"].split(",")
 
@@ -232,16 +236,16 @@ def main(options):
                 logger.debug("Group {} was seen before. Not creating ...".format(group))
             else:
                 data = (nerdgraph.CreateGroup(destination_domain_id,
-                                            group)).execute(api_key, options.finalize)
+                                            group)).execute(api_key, not options.dryrun)
                 id = data['data']['userManagementCreateGroup']['group']['id']
                 logger.info("Created group {} with id {} ...".format(group, id))
                 created_groups[group] = id
 
             group_id = created_groups[group]
-            (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, options.finalize)
+            (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, not options.dryrun)
 
     # We now have to tie the roles to the groups
-    role_mapping = (nerdgraph.RolesQuery(source_domain_id)).execute(api_key, options.finalize)
+    role_mapping = (nerdgraph.RolesQuery(source_domain_id)).execute(api_key, not options.dryrun)
     groups = role_mapping['data']['actor']['organization']['authorizationManagement']['authenticationDomains']['authenticationDomains'][0]['groups']['groups']
     for group in groups:
         # See if this group belongs to something we created
@@ -253,7 +257,7 @@ def main(options):
                     account_id = role['accountId']
                     logger.debug("Assigning {} ({}) Role {} AccountId {}".format(group['displayName'], group_id, role_id, account_id))
                     nerdgraph.AssignRole(group_id, account_id,
-                                        role_id).execute(api_key, options.finalize)
+                                        role_id).execute(api_key, not options.dryrun)
                 else:
                     logger.warning("Detected a null accountId on role {}".format(role_id))
 
