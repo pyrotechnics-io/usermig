@@ -5,6 +5,7 @@ from string import Template
 
 logger = logging.getLogger('usermig')
 
+
 class GraphQL:
     def build_query(self):
         pass
@@ -12,17 +13,22 @@ class GraphQL:
     def name(self):
         pass
 
-    async def execute(self, api_key: str):
+    def execute(self, api_key: str, finalize: bool):
         url = "https://api.newrelic.com/graphql"
         graphql = None
         try:
             query = self.build_query()
+            logger.debug("Executing query {}...".format(query))
             if isinstance(query, str):
                 graphql = {"query": query.replace("\n", "")}
             else:
                 raise Exception("Invalid query")
         except Exception as e:
             logger.error(e)
+
+        if finalize is False:
+            logger.info("NRQL: {}".format(graphql))
+            return
 
         headers = {"API-Key": api_key}
         client = requests.Session()
@@ -35,7 +41,13 @@ class GraphQL:
             text = response.text
             if isinstance(text, str):
                 try:
-                    return json.loads(text)
+                    jsondata = json.loads(text)
+                    if "errors" in jsondata:
+                        logger.error("{}".format(
+                            jsondata["errors"][0]["message"]))
+                    else:
+                        logger.debug("Response [{}]".format(text))
+                    return jsondata
                 except Exception as e:
                     logger.error(e)
                     raise e
@@ -51,7 +63,7 @@ class UsersQuery(GraphQL):
   actor {
     organization {
       userManagement {
-        authenticationDomains(id: "{auth_domain}") {
+        authenticationDomains(id: "$auth_domain") {
           authenticationDomains {
             users {
               users {
@@ -79,20 +91,23 @@ class UsersQuery(GraphQL):
     }
   }
 }
-        """).substitute(self)
+        """).substitute(self.__dict__)
 
     def name(self):
         return "UsersQuery"
 
 
 class RolesQuery(GraphQL):
+    def __init__(self, source_domain_id):
+        self.source_domain_id = source_domain_id
+
     def build_query(self):
-        return """
+        return Template("""
 {
   actor {
     organization {
       authorizationManagement {
-        authenticationDomains {
+        authenticationDomains(id: "$source_domain_id") {
           authenticationDomains {
             groups {
               groups {
@@ -115,7 +130,7 @@ class RolesQuery(GraphQL):
     }
   }
 }
-        """
+        """).substitute(self.__dict__)
 
     def name(self):
         return "RolesQuery"
@@ -131,10 +146,10 @@ class CreateUser(GraphQL):
     def build_query(self):
         return Template("""
 mutation {
-  userManagementCreateUser(createUserOptions: {email: "{email}", name: "{name}", userType: {user_type}, authenticationDomainId: "{auth_domain_id}"})
-
+  userManagementCreateUser(createUserOptions: {email: "$email", name: "$name", userType: $user_type, authenticationDomainId: "$auth_domain_id"})
+  {createdUser {id}}
 }
-        """).substitute(self)
+        """).substitute(self.__dict__)
 
     def name(self):
         return "CreateUser"
@@ -150,8 +165,8 @@ class CreateGroup(GraphQL):
 mutation {
   userManagementCreateGroup(
     createGroupOptions: {
-      authenticationDomainId: "{auth_domain}"
-      displayName: "{group_name}"
+      authenticationDomainId: "$auth_domain"
+      displayName: "$group_name"
     }
   ) {
     group {
@@ -160,7 +175,7 @@ mutation {
     }
   }
 }
-        """).substitute(self)
+        """).substitute(self.__dict__)
 
     def name(self):
         return "CreateGroup"
@@ -177,10 +192,10 @@ class AssignRole(GraphQL):
 mutation {
   authorizationManagementGrantAccess(
     grantAccessOptions: {
-      groupId: "{group_id}"
+      groupId: "$group_id"
       accountAccessGrants: {
-        accountId: {account_id}
-        roleId: "{role_id}"
+        accountId: $account_id
+        roleId: "$role_id"
       }
     }
   ) {
@@ -190,7 +205,7 @@ mutation {
     }
   }
 }    
-        """).substitute(self)
+        """).substitute(self.__dict__)
 
     def name(self):
         return "AssignRole"
@@ -206,8 +221,8 @@ class AddUserToGroup(GraphQL):
 mutation {
   userManagementAddUsersToGroups(
     addUsersToGroupsOptions: {
-      groupIds: [{group_id}]
-      userIds: [{user_id}]
+      groupIds: ["$group_id"]
+      userIds: [$user_id]
     }
   ) {
     groups {
@@ -216,7 +231,7 @@ mutation {
     }
   }
 }
-        """).substitute(self)
+        """).substitute(self.__dict__)
 
     def name(self):
         return "AddUserToGroup"

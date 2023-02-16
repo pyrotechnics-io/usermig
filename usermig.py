@@ -31,15 +31,17 @@ __author__ = "Harsh Baste"
 __version__ = "0.1.0"
 __license__ = "Proprietary"
 
+from string import Template
 import argparse
 import csv
 import logging
 import logging.handlers
 import os
 import sys
-from string import Template
-
 import yaml
+from tqdm import tqdm
+import time
+
 
 import nerdgraph
 
@@ -53,8 +55,7 @@ config = None
 
 def sample_config(config_file):
     # FIXME: Define a set of options for the script
-    contents = Template(
-        """\
+    contents = Template("""\
 usermig:
     name: $name
     loglevel: $level
@@ -62,14 +63,14 @@ usermig:
     api_key: NRAK-BlahBlah
     source_domain_id: 
     destination_domain_id: 
-    """
-    )
+    """)
     data = contents.substitute(name="UserMig", level="DEBUG")
     try:
         f = open(config_file, "x")
         f.write(data)
         f.close()
-        logger.info("Boilerplate configuration created at {}".format(config_file))
+        logger.info(
+            "Boilerplate configuration created at {}".format(config_file))
     except FileExistsError:
         logger.error("Refusing to over-write an existing file!")
     sys.exit(1)
@@ -83,32 +84,58 @@ def read_config(config_file):
     config = root["usermig"]
 
 
-class CustomFormatter(
-    argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
-):
+class CustomFormatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
     pass
 
+class LogFormatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)s.%(lineno)d | %(message)s"
+    datefmt="%d%m%Y:%H:%M:%S"
+
+    FORMATS = {
+        logging.DEBUG: grey + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
 
 def parse_args(args=sys.argv[1:]):
-    parser = argparse.ArgumentParser(
-        description=sys.modules[__name__].__doc__, formatter_class=CustomFormatter
-    )
+    parser = argparse.ArgumentParser(description=sys.modules[__name__].__doc__,
+                                     formatter_class=CustomFormatter)
 
     g = parser.add_mutually_exclusive_group()
-    g.add_argument(
-        "--debug", "-d", action="store_true", default=False, help="enable debugging"
-    )
-    g.add_argument(
-        "--silent", "-s", action="store_true", default=False, help="don't log"
-    )
-    # FIXME: modify these options
+    g.add_argument("--debug",
+                   "-d",
+                   action="store_true",
+                   default=False,
+                   help="enable debugging")
+    g.add_argument("--silent",
+                   "-s",
+                   action="store_true",
+                   default=False,
+                   help="don't log")
+    g.add_argument("--finalize",
+                   "-f",
+                   action="store_true",
+                   default=True,
+                   help="Finalize changes")
     g = parser.add_argument_group("usermig settings")
     g.add_argument(
         "-c",
         "--config",
         dest="configfile",
         required=False,
-        default="ml",
+        default="config.yml",
         help="File to read the TSV user list from",
     )
 
@@ -123,21 +150,15 @@ def setup_logging(options):
     if not options.silent:
         if not sys.stderr.isatty():
             facility = logging.handlers.SysLogHandler.LOG_DAEMON
-            sh = logging.handlers.SysLogHandler(address="/dev/log", facility=facility)
+            sh = logging.handlers.SysLogHandler(address="/dev/log",
+                                                facility=facility)
             sh.setFormatter(
-                logging.Formatter(
-                    "{0}[{1}]: %(message)s".format(logger.name, os.getpid())
-                )
-            )
+                logging.Formatter("{0}[{1}]: %(message)s".format(
+                    logger.name, os.getpid())))
             root.addHandler(sh)
         else:
             ch = logging.StreamHandler()
-            ch.setFormatter(
-                logging.Formatter(
-                    "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)s.%(lineno)d | %(message)s",
-                    datefmt="%d%m%Y:%H:%M:%S",
-                )
-            )
+            ch.setFormatter(LogFormatter())
             root.addHandler(ch)
 
 
@@ -157,41 +178,67 @@ def main(options):
     logger.info("Starting {} ...".format(config["name"]))
     api_key = config["api_key"]
 
+    if options.finalize is True:
+        logger.warning("This run will commit changes")
+        countdown = 10
+        for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
+            time.sleep(1) # sleep for 1 second
+
     tsvname = config["tsv"]
     logger.info("Parsing data from {tsvname}...")
 
     users = parse_file(tsvname)
 
+    # TODO: Run sanity check on field headers
+
     destination_domain_id = config["destination_domain_id"]
+    source_domain_id = config["source_domain_id"]
     logger.info(
-        "Duplicating users in the target auth domain {destination_domain_id}..."
+        "Duplicating users in the target auth domain [{}]...".format(destination_domain_id)
     )
+
+    for user in users:
+        logger.debug(user)
 
     # To improve execution performance we pull unique groups while looking
     # at each user and create the group if it hasnt been created already
     created_groups = dict()
     for user in users:
-        group = user["group_name"]
-        if group in created_groups:
-            logger.debug("Group {group} was seen before. Not creating ...")
-        else:
-            logger.info("Creating group {group} ...")
-            data = nerdgraph.CreateGroup(destination_domain_id, group).execute(api_key)
-            # TODO: Pull out the group id
-            id = data["group_id"]
-            created_groups[group] = id
+        logger.debug("Adding user {}".format(user["Email"]))
+        userinfo = (nerdgraph.CreateUser(user["Email"], user["Name"], user["User type"].upper(),
+                            destination_domain_id)).execute(api_key, options.finalize)
+        user_id = userinfo['data']['userManagementCreateUser']['createdUser']['id']
+        groups = user["Groups"].split(",")
 
-        group_id = created_groups[group]
-        nerdgraph.CreateUser(
-            user["email"], user["name"], user["user_type"], destination_domain_id
-        ).execute(api_key)
-        nerdgraph.AddUserToGroup(group_id, destination_domain_id).execute(api_key)
+        for group in groups:
+            if group in created_groups:
+                logger.debug("Group {} was seen before. Not creating ...".format(group))
+            else:
+                data = (nerdgraph.CreateGroup(destination_domain_id,
+                                            group)).execute(api_key, options.finalize)
+                id = data['data']['userManagementCreateGroup']['group']['id']
+                logger.info("Created group {} with id {} ...".format(group, id))
+                created_groups[group] = id
+
+            group_id = created_groups[group]
+            (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, options.finalize)
 
     # We now have to tie the roles to the groups
-    role_mapping = nerdgraph.RolesQuery().execute(api_key)
-    for group in role_mapping.groups:  # TODO: Fix this
-        for role in group.roles:  # TODO: Fix this
-            nerdgraph.AssignRole(group.id, role.id, role.account_id).execute(api_key)
+    role_mapping = (nerdgraph.RolesQuery(source_domain_id)).execute(api_key, options.finalize)
+    groups = role_mapping['data']['actor']['organization']['authorizationManagement']['authenticationDomains']['authenticationDomains'][0]['groups']['groups']
+    for group in groups:
+        # See if this group belongs to something we created
+        if group['displayName'] in created_groups:
+            group_id = created_groups[group['displayName']]
+            for role in group['roles']['roles']:
+                role_id = role['roleId']
+                if role['accountId']:
+                    account_id = role['accountId']
+                    logger.debug("Assigning {} ({}) Role {} AccountId {}".format(group['displayName'], group_id, role_id, account_id))
+                    nerdgraph.AssignRole(group_id, account_id,
+                                        role_id).execute(api_key, options.finalize)
+                else:
+                    logger.warning("Detected a null accountId on role {}".format(role_id))
 
     logger.info("Done!")
 
@@ -217,7 +264,7 @@ if __name__ == "__main__":
     setup_logging(options)
 
     try:
-        print("\n".join(main(options)))
+        main(options)
     except Exception as e:
         logger.exception("%s", e)
         sys.exit(1)
