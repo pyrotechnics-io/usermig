@@ -41,8 +41,7 @@ import sys
 import yaml
 from tqdm import tqdm
 import time
-
-
+import re
 import nerdgraph
 
 # ----[ Globals ]----
@@ -93,7 +92,7 @@ class LogFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)s.%(lineno)d | %(message)s"
+    format = "%(asctime)-17s %(levelname)-7s | %(module)s.%(funcName)s.%(lineno)-10d | %(message)s"
     datefmt="%d%m%Y:%H:%M:%S"
 
     FORMATS = {
@@ -162,17 +161,37 @@ def setup_logging(options):
             root.addHandler(ch)
 
 
+# ----[ Application Logic ]----
+regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
+
+def validate_row(idx, row):
+    if row.keys() >= {"Name", "Email", "User type", "Groups"}:
+        if re.fullmatch(regex, row["Email"]):
+            if row["User type"].upper() in ["BASIC_USER_TIER", "CORE_USER_TIER", "FULL_USER_TIER"]:
+                if row["Name"] and row["Groups"]:
+                    # All checks passed
+                    return None
+                else:
+                    return "Name or Groups is empty"
+            else:
+                return "User type is invalid"
+        else:
+            return "Email address is invalid"
+    else:
+        return "File does not have the correct header fields"
+    return "Unknown error"
+
 def parse_file(tsv_file_name):
     with open(tsv_file_name, "r") as tsvfile:
         reader = csv.DictReader(tsvfile, delimiter="\t")
         data = []
         for row in reader:
-            data.append(row)
+            error = validate_row(reader.line_num, row)
+            if error is None:
+                data.append(row)
+            else:
+                logger.warning("Ignored line: {}. Reason: {}".format(reader.line_num, error))
         return data
-
-
-# ----[ Application Logic ]----
-
 
 def main(options):
     logger.info("Starting {} ...".format(config["name"]))
@@ -188,8 +207,6 @@ def main(options):
     logger.info("Parsing data from {tsvname}...")
 
     users = parse_file(tsvname)
-
-    # TODO: Run sanity check on field headers
 
     destination_domain_id = config["destination_domain_id"]
     source_domain_id = config["source_domain_id"]
@@ -265,9 +282,12 @@ if __name__ == "__main__":
 
     try:
         main(options)
+    except KeyboardInterrupt:
+        logger.info("Manually interrupted execution")
+        sys.exit(255)
     except Exception as e:
         logger.exception("%s", e)
-        sys.exit(1)
+        sys.exit(2)
     sys.exit(0)
 
 # ----[ Unit Tests ]----
