@@ -57,3 +57,7 @@ If you need to run the script to just validate the input TSV, run it in dry run 
 ```bash
 ./usermig.py -c config.yml --dryrun
 ```
+
+## Note
+
+This script will only migrate users and does not attempt to move the assets (dashboards, keys, etc) tied to the user.
