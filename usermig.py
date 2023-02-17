@@ -51,7 +51,6 @@ config = None
 
 # ----[ Supporting Functions ]----
 
-
 def sample_config(config_file):
     # FIXME: Define a set of options for the script
     contents = Template("""\
@@ -161,7 +160,8 @@ def setup_logging(options):
             root.addHandler(ch)
 
 
-# ----[ Application Logic ]----
+# ----[ Application ]----
+
 regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
 
 def validate_row(idx, row):
@@ -262,6 +262,7 @@ def main(options):
 
 
 # ----[ Entry Point ]----
+
 if __name__ == "__main__":
     options = parse_args()
 
@@ -290,12 +291,3 @@ if __name__ == "__main__":
         logger.exception("%s", e)
         sys.exit(2)
     sys.exit(0)
-
-# ----[ Unit Tests ]----
-
-# FIXME: Write proper unit tests
-# import pytest  # noqa: E402
-# import shlex  # noqa: E402
-
-# def test_main(args, expected):
-#     assert true == expected
