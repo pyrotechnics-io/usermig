@@ -29,7 +29,7 @@ Disclaimer:
 
 __author__ = "Harsh Baste"
 __version__ = "0.1.0"
-__license__ = "Proprietary"
+__license__ = "MIT"
 
 from string import Template
 import argparse
