@@ -311,7 +311,6 @@ def add_to_group(options, api_key, users, source_domain_id):
             logger.error("User {} not found".format(user["Email"]))
             return
         
-        # Write an info message saying this user is already a member of all the existing groups if groups length is zero
         if len(groups) == 0:
             logger.info("User {} is already a member of all the groups specified".format(user["Email"]))
             continue
