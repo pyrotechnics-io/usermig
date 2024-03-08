@@ -122,6 +122,11 @@ def parse_args(args=sys.argv[1:]):
                    action="store_true",
                    default=False,
                    help="don't log")
+    g.add_argument("--just-add-to-group",
+                   "-j",
+                   action="store_true",
+                   default=False,
+                   help="Just add users to the tsv specified group")
     g.add_argument("--dryrun",
                    "-r",
                    action="store_true",
@@ -138,7 +143,6 @@ def parse_args(args=sys.argv[1:]):
     )
 
     return parser.parse_args(args)
-
 
 def setup_logging(options):
     """Configure logging."""
@@ -214,6 +218,35 @@ def main(options):
 
     destination_domain_id = config["destination_domain_id"]
     source_domain_id = config["source_domain_id"]
+    
+    if options.just_add_to_group:
+        logger.info("Running in just add to group mode")
+        for user in users:
+            userinfo = (nerdgraph.UserQuery(source_domain_id)).execute(api_key, not options.dryrun)
+            # Pull out the user_id from the graphql reply from nerdgraph.UserQuery
+            user_id = userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users'][0]['id']
+            groups = user["Groups"].split(",")
+            # Make sure the groups already exist and get their IDs
+            all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
+            for group in groups:
+                logger.debug("Looking for group {}".format(group))
+                # iterate through all_groups_under_ad and check if group exists
+                for ad_group in all_groups_under_ad['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['groups']['groups']:
+                    if ad_group['displayName'] == group:
+                        logger.debug("Found group {} with id {}".format(group, ad_group['id']))
+                        groups[groups.index(group)] = ad_group['id']
+                        break
+                else:
+                    logger.debug("Group {} not found. Creating ...".format(group))
+                    data = (nerdgraph.CreateGroup(source_domain_id,
+                                                group)).execute(api_key, not options.dryrun)
+                    id = data['data']['userManagementCreateGroup']['group']['id']
+                    logger.info("Created group {} with id {} ...".format(group, id))
+                    groups[groups.index(group)] = id
+            # Add the existing user to the group
+            (nerdgraph.AddUserToGroup(groups[groups.index(group)], user_id)).execute(api_key, not options.dryrun)
+        sys.exit(0)
+
     logger.info(
         "Duplicating users in the target auth domain [{}]...".format(destination_domain_id)
     )

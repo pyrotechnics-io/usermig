@@ -52,6 +52,35 @@ class GraphQL:
                     logger.error(e)
                     raise e
 
+class GroupsQuery(GraphQL):
+    def __init__(self, auth_domain):
+        self.auth_domain = auth_domain
+
+    def build_query(self):
+        return Template("""
+{
+  actor {
+    organization {
+      userManagement {
+        authenticationDomains(id: "$auth_domain") {
+          authenticationDomains {
+            groups {
+              groups {
+                displayName
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+        """).substitute(self.__dict__)
+
+    def name(self):
+        return "GroupsQuery"
+y
 
 class UsersQuery(GraphQL):
     def __init__(self, auth_domain):
