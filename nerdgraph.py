@@ -80,7 +80,6 @@ class GroupsQuery(GraphQL):
 
     def name(self):
         return "GroupsQuery"
-y
 
 class UsersQuery(GraphQL):
     def __init__(self, auth_domain):
@@ -259,6 +258,81 @@ mutation {
     def name(self):
         return "AssignRole"
 
+# Make a class to dump users in the format the script expects
+# This is not used in the script but can be used to dump users in the format the script expects
+class DumpUsers(GraphQL):
+    def __init__(self, auth_domain, users):
+        self.auth_domain = auth_domain
+        self.users = users
+
+    def build_query(self):
+        return Template("""
+{
+  actor {
+    organization {
+      userManagement {
+        authenticationDomains(id: "$auth_domain") {
+          authenticationDomains {
+            users {
+              users {
+                type {
+                  displayName
+                  id
+                }
+                name
+                timeZone
+                groups {
+                  groups {
+                    id
+                    displayName
+                  }
+                }
+                email
+                emailVerificationState
+                id
+              }
+              nextCursor
+            }
+          }
+        }
+      }
+    }
+  }
+}
+        """).substitute(self.__dict__)
+
+    def name(self):
+        return "DumpUsers"
+
+# This is not used in the script but can be used to dump users in the format the script expects
+class DumpGroups(GraphQL):
+    def __init__(self, auth_domain):
+        self.auth_domain = auth_domain
+
+    def build_query(self):
+        return Template("""
+{
+  actor {
+    organization {
+      userManagement {
+        authenticationDomains(id: "$auth_domain") {
+          authenticationDomains {
+            groups {
+              groups {
+                displayName
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+        """).substitute(self.__dict__)
+
+    def name(self):
+        return "DumpGroups"
 
 class AddUserToGroup(GraphQL):
     def __init__(self, group_id, user_id):

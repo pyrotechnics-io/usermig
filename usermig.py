@@ -122,6 +122,11 @@ def parse_args(args=sys.argv[1:]):
                    action="store_true",
                    default=False,
                    help="don't log")
+    g.add_argument("--dump-users",
+                   "-u",
+                   action="store_true",
+                   default=False,
+                   help="Dump users in the format the script expects")
     g.add_argument("--just-add-to-group",
                    "-j",
                    action="store_true",
@@ -171,7 +176,7 @@ regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
 def validate_row(idx, row):
     if row.keys() >= {"Name", "Email", "User type", "Groups"}:
         if re.fullmatch(regex, row["Email"]):
-            if row["User type"].upper() in ["BASIC_USER_TIER", "CORE_USER_TIER", "FULL_USER_TIER"]:
+            if row["User type"].upper() in ["BASIC_USER_TIER", "CORE_USER_TIER", "FULL_USER_TIER", "BASIC", "CORE", "FULL PLATFORM"]:
                 if row["Name"] and row["Groups"]:
                     # All checks passed
                     return None
@@ -197,56 +202,49 @@ def parse_file(tsv_file_name):
                 logger.warning("Ignored line: {}. Reason: {}".format(reader.line_num, error))
         return data
 
+# finish the dump_users function here as called in main. Confirm if the user exists, 
+# and then proceed to dump the users in the format this script expects for the tsv file
+def dump_users(options, api_key, source_domain_id):
+    logger.info("Dumping users in the format the script expects for the tsv file")
+    userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
+    print("Name\tEmail\tUser type\tGroups")
+    for user in userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users']:
+        print("\t".join([user['name'], user['email'], user['type']['displayName'], ",".join([group['displayName'] for group in user['groups']['groups']])]))
+
 def main(options):
     logger.info("Starting {} ...".format(config["name"]))
     api_key = config["api_key"]
-
-    if options.dryrun is False:
-        logger.warning("This run will commit changes")
-        countdown = 10
-        for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
-            time.sleep(1) # sleep for 1 second
-
+    destination_domain_id = config["destination_domain_id"]
+    source_domain_id = config["source_domain_id"]
+    
+    if options.dump_users:
+        dump_users(options, api_key, source_domain_id)
+        sys.exit(0)
+       
     tsvname = config["tsv"]
     logger.info("Parsing data from {}...".format(tsvname))
-
     users = parse_file(tsvname)
+    
+    if len(users) == 0:
+        logger.error("No users found in the tsv file")
+        sys.exit(1)
+    else:
+        logger.info("Found {} rows in the tsv file".format(len(users)))
 
     if options.dryrun:
         logger.info("Running in dryrun mode. Exiting after validating input")
         sys.exit(0)
 
-    destination_domain_id = config["destination_domain_id"]
-    source_domain_id = config["source_domain_id"]
-    
     if options.just_add_to_group:
-        logger.info("Running in just add to group mode")
-        for user in users:
-            userinfo = (nerdgraph.UserQuery(source_domain_id)).execute(api_key, not options.dryrun)
-            # Pull out the user_id from the graphql reply from nerdgraph.UserQuery
-            user_id = userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users'][0]['id']
-            groups = user["Groups"].split(",")
-            # Make sure the groups already exist and get their IDs
-            all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
-            for group in groups:
-                logger.debug("Looking for group {}".format(group))
-                # iterate through all_groups_under_ad and check if group exists
-                for ad_group in all_groups_under_ad['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['groups']['groups']:
-                    if ad_group['displayName'] == group:
-                        logger.debug("Found group {} with id {}".format(group, ad_group['id']))
-                        groups[groups.index(group)] = ad_group['id']
-                        break
-                else:
-                    logger.debug("Group {} not found. Creating ...".format(group))
-                    data = (nerdgraph.CreateGroup(source_domain_id,
-                                                group)).execute(api_key, not options.dryrun)
-                    id = data['data']['userManagementCreateGroup']['group']['id']
-                    logger.info("Created group {} with id {} ...".format(group, id))
-                    groups[groups.index(group)] = id
-            # Add the existing user to the group
-            (nerdgraph.AddUserToGroup(groups[groups.index(group)], user_id)).execute(api_key, not options.dryrun)
+        add_to_group(options, api_key, users, source_domain_id)
         sys.exit(0)
-
+        
+    if options.dryrun is False:
+        logger.warning("This run will commit changes")
+        countdown = 10
+        for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
+            time.sleep(1) # sleep for 1 second
+            
     logger.info(
         "Duplicating users in the target auth domain [{}]...".format(destination_domain_id)
     )
@@ -292,6 +290,35 @@ def main(options):
                                     role_id).execute(api_key, not options.dryrun)
 
     logger.info("Done!")
+
+def add_to_group(options, api_key, users, source_domain_id):
+    logger.info("Running in just add to group mode")
+    for user in users:
+        userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
+            # Pull out the user_id from the graphql reply from nerdgraph.UserQuery
+        user_id = userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users'][0]['id']
+        groups = user["Groups"].split(",")
+            # Make sure the groups already exist and get their IDs
+        all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
+        for group in groups:
+            logger.debug("Looking for group {}".format(group))
+            group_id = None
+                # iterate through all_groups_under_ad and check if group exists
+            for ad_group in all_groups_under_ad['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['groups']['groups']:
+                if ad_group['displayName'] == group:
+                    logger.debug("Found group {} with id {}".format(group, ad_group['id']))
+                    group_id = ad_group['id']
+                    break
+            else:
+                logger.debug("Group {} not found. Creating ...".format(group))
+                data = (nerdgraph.CreateGroup(source_domain_id,
+                                                group)).execute(api_key, not options.dryrun)
+                id = data['data']['userManagementCreateGroup']['group']['id']
+                logger.info("Created group {} with id {} ...".format(group, id))
+                group_id = id
+
+            # Add the existing user to the group
+        (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, not options.dryrun)
 
 
 # ----[ Entry Point ]----
