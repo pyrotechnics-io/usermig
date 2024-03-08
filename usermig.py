@@ -293,7 +293,7 @@ def add_to_group(options, api_key, users, source_domain_id):
     logger.info("Running in just add to group mode")
     all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
     for user in users:
-        groups = user["Groups"].split(",")
+        groups = [group.strip() for group in user["Groups"].split(",")]
         userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
         user_id = None
         
