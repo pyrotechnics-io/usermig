@@ -291,13 +291,27 @@ def migrate_domains(options, api_key, destination_domain_id, source_domain_id, u
 
 def add_to_group(options, api_key, users, source_domain_id):
     logger.info("Running in just add to group mode")
+    all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
     for user in users:
-        userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
-            # Pull out the user_id from the graphql reply from nerdgraph.UserQuery
-        user_id = userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users'][0]['id']
         groups = user["Groups"].split(",")
-            # Make sure the groups already exist and get their IDs
-        all_groups_under_ad = (nerdgraph.GroupsQuery(source_domain_id)).execute(api_key, not options.dryrun)
+        userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
+        user_id = None
+        
+        # Locate the user and his existing groups
+        for userobj in userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users']:
+            if userobj['email'] == user["Email"]:
+                logger.debug("Found user {}".format(user["Email"]))
+                user_id = userobj['id']
+                for group in userobj['groups']['groups']:
+                    existing_group_name = group['displayName']
+                    if existing_group_name in groups:
+                        groups.remove(existing_group_name)
+                break
+        else:
+            logger.error("User {} not found".format(user["Email"]))
+            return
+ 
+        # Make sure the groups already exist and/or create them where needed
         for group in groups:
             logger.debug("Looking for group {}".format(group))
             group_id = None
@@ -314,9 +328,7 @@ def add_to_group(options, api_key, users, source_domain_id):
                 id = data['data']['userManagementCreateGroup']['group']['id']
                 logger.info("Created group {} with id {} ...".format(group, id))
                 group_id = id
-
-            # Add the existing user to the group
-        (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, not options.dryrun)
+            (nerdgraph.AddUserToGroup(group_id, user_id)).execute(api_key, not options.dryrun)
 
 
 # ----[ Entry Point ]----
