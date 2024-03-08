@@ -234,21 +234,21 @@ def main(options):
     if options.dryrun:
         logger.info("Running in dryrun mode. Exiting after validating input")
         sys.exit(0)
+    else:
+        logger.warning("This run will commit changes")
+        countdown = 10
+        for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
+            time.sleep(1) # sleep for 1 second
 
     if options.just_add_to_group:
         add_to_group(options, api_key, users, source_domain_id)
         sys.exit(0)
         
-    if options.dryrun is False:
-        logger.warning("This run will commit changes")
-        countdown = 10
-        for i in tqdm(range(countdown), ncols=50, smoothing=50, desc="Confirming in {} seconds".format(countdown), bar_format='{l_bar} {bar}'):
-            time.sleep(1) # sleep for 1 second
-            
-    logger.info(
-        "Duplicating users in the target auth domain [{}]...".format(destination_domain_id)
-    )
+    migrate_domains(options, api_key, destination_domain_id, source_domain_id, users)
+    logger.info("Done!")
 
+def migrate_domains(options, api_key, destination_domain_id, source_domain_id, users):
+    logger.info("Duplicating users in the target auth domain [{}]...".format(destination_domain_id))
     for user in users:
         logger.debug(user)
 
@@ -288,8 +288,6 @@ def main(options):
                 logger.debug("Assigning {} ({}) Role {} AccountId {}".format(group['displayName'], group_id, role_id, account_id))
                 nerdgraph.AssignRole(group_id, account_id,
                                     role_id).execute(api_key, not options.dryrun)
-
-    logger.info("Done!")
 
 def add_to_group(options, api_key, users, source_domain_id):
     logger.info("Running in just add to group mode")
