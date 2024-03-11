@@ -10,7 +10,7 @@
 
 This script provides a means to migrate users from New Relic password domain onto the SAML/SSO domain
 Assumptions: 
-    (a) The new domain has already been created and has no users in it.
+    (a) The new domain has already been created and has no users in it (for AD migration only)
     (b) The list of users specified has been pre-vetted and complies with the format required
 
 Disclaimer:
@@ -62,7 +62,7 @@ usermig:
     source_domain_id: 
     destination_domain_id: 
     """)
-    data = contents.substitute(name="UserMig", level="DEBUG")
+    data = contents.substitute(name="UserMig", level="INFO")
     try:
         f = open(config_file, "x")
         f.write(data)
@@ -207,9 +207,15 @@ def parse_file(tsv_file_name):
 def dump_users(options, api_key, source_domain_id):
     logger.info("Dumping users in the format the script expects for the tsv file")
     userinfo = (nerdgraph.UsersQuery(source_domain_id)).execute(api_key, not options.dryrun)
+    # Make sure the output is API friendly
+    normalizer = {
+        "BASIC": "BASIC_USER_TIER",
+        "CORE": "CORE_USER_TIER",
+        "FULL PLATFORM": "FULL_USER_TIER"
+    } 
     print("Name\tEmail\tUser type\tGroups")
     for user in userinfo['data']['actor']['organization']['userManagement']['authenticationDomains']['authenticationDomains'][0]['users']['users']:
-        print("\t".join([user['name'], user['email'], user['type']['displayName'], ",".join([group['displayName'] for group in user['groups']['groups']])]))
+        print("\t".join([user['name'], user['email'],  normalizer[user['type']['displayName'].upper()], ",".join([group['displayName'] for group in user['groups']['groups']])]))
 
 def main(options):
     logger.info("Starting {} ...".format(config["name"]))
