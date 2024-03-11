@@ -1,8 +1,7 @@
 
-# New Relic AD User Migration
+# New Relic User Migration Tools
 
-This script allows you to migrate users from one authentication domain to another on New Relic.
-
+This script allows you to migrate users within groups or from one authentication domain to another on New Relic.
 
 
 ## Installation
@@ -42,7 +41,23 @@ Email
 User type
 Groups
 ```
-> Exporting from the NR One frontend should give you these fields.
+
+### Exporting Users
+Exporting from the NR One frontend should give you these fields. Alternatively you can dump all the users like so
+
+```bash
+./usermig.py --dump-users > filename.tsv
+```
+
+### Dry Run
+
+If you need to run the script to just validate the input TSV, run it in dry run mode like so:
+
+```bash
+./usermig.py -c config.yml --dryrun
+```
+
+### Authentication Domain Migration
 
 With the configuration and input file in place run the same command again:
 
@@ -52,11 +67,17 @@ With the configuration and input file in place run the same command again:
 
 This should create users into the destination domain with their corresponding groups copied over.
 
-If you need to run the script to just validate the input TSV, run it in dry run mode like so:
+> Note that no deletion operations occur in this process. The source users will remain in the source domain. Any existing users (including potential duplicates) will remain in the target authentication domain.
+
+### Group migration only
+
+If you only need to migrate users from one group to another within the same authentication domain, generate the user list as above and then run: 
 
 ```bash
-./usermig.py -c config.yml --dryrun
+./usermig.py -c config.yml --just-add-to-group
 ```
+
+This will add the users to the destination group.
 
 ## Note
 
